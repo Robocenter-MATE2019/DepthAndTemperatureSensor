@@ -42,7 +42,7 @@ void MS5803::reset(void)
 // Reset device I2C
 {
    sendCommand(CMD_RESET);
-   sensorWait(3);
+   delay(3);
 }
 
 uint8_t MS5803::begin(void)
@@ -72,39 +72,49 @@ float MS5803::getTemperature(temperature_units units, precision _precision)
 // Return a temperature reading in either F or C.
 {
 	getMeasurements(_precision);
-	float temperature_reported;
-	// If Fahrenheit is selected return the temperature converted to F
-	if(units == FAHRENHEIT)
-  {
-		temperature_reported = _temperature_actual / 100.0f;
-		temperature_reported = (((temperature_reported) * 9) / 5) + 32;
-		return temperature_reported;
+	if (_temperature_actual == -1)
+	{
+		float temperature_reported;
+		// If Fahrenheit is selected return the temperature converted to F
+		if (units == FAHRENHEIT)
+		{
+			temperature_reported = _temperature_actual / 100.0f;
+			temperature_reported = (((temperature_reported) * 9) / 5) + 32;
+			return temperature_reported;
+		}
+
+		// If Celsius is selected return the temperature converted to C	
+		else
+		{
+			temperature_reported = _temperature_actual / 100.0f;
+			return temperature_reported;
+		}
 	}
-		
-	// If Celsius is selected return the temperature converted to C	
-	else
-  {
-		temperature_reported = _temperature_actual / 100.0f;
-		return temperature_reported;
-	}
+	return -1;
 }
 
 float MS5803::getPressure(precision _precision)
 // Return a pressure reading units Pa.
 {
 	getMeasurements(_precision);
-	float pressure_reported;
-	pressure_reported = _pressure_actual;
-	pressure_reported = pressure_reported / 10.0f;
-	return pressure_reported;
+	if (_pressure_actual != -1)
+	{
+		float pressure_reported;
+		pressure_reported = _pressure_actual;
+		pressure_reported = pressure_reported / 10.0f;
+		return pressure_reported;
+	}
+	return -1;
 }
 
 void MS5803::getMeasurements(precision _precision)
 
 {
 	//Retrieve ADC result
-	int32_t temperature_raw = getADCconversion(TEMPERATURE, _precision);
-	int32_t pressure_raw = getADCconversion(PRESSURE, _precision);
+	bool temperatureiselapsed = false;
+	bool depthiselapsed = false;
+	int32_t temperature_raw = getADCconversion(TEMPERATURE, _precision, temperatureiselapsed);
+	int32_t pressure_raw = getADCconversion(PRESSURE, _precision, depthiselapsed);
 	
 	
 	//Create Variables for calculations
@@ -121,50 +131,56 @@ void MS5803::getMeasurements(precision _precision)
 	
 	//Now we have our first order Temperature, let's calculate the second order.
 	int64_t T2, OFF2, SENS2, OFF, SENS; //working variables
-
-	if (temp_calc < 2000) 
-	// If temp_calc is below 20.0C
-	{	
-		T2 = 3 * (((int64_t)dT * dT) >> 33);
-		OFF2 = 3 * ((temp_calc - 2000) * (temp_calc - 2000)) / 2;
-		SENS2 = 5 * ((temp_calc - 2000) * (temp_calc - 2000)) / 8;
-		
-		if(temp_calc < -1500)
-		// If temp_calc is below -15.0C 
+	if ((depthiselapsed == true) && (temperatureiselapsed == true))
+	{
+		if (temp_calc < 2000)
+			// If temp_calc is below 20.0C
 		{
-			OFF2 = OFF2 + 7 * ((temp_calc + 1500) * (temp_calc + 1500));
-			SENS2 = SENS2 + 4 * ((temp_calc + 1500) * (temp_calc + 1500));
+			T2 = 3 * (((int64_t)dT * dT) >> 33);
+			OFF2 = 3 * ((temp_calc - 2000) * (temp_calc - 2000)) / 2;
+			SENS2 = 5 * ((temp_calc - 2000) * (temp_calc - 2000)) / 8;
+
+			if (temp_calc < -1500)
+				// If temp_calc is below -15.0C 
+			{
+				OFF2 = OFF2 + 7 * ((temp_calc + 1500) * (temp_calc + 1500));
+				SENS2 = SENS2 + 4 * ((temp_calc + 1500) * (temp_calc + 1500));
+			}
 		}
-    } 
-	else
-	// If temp_calc is above 20.0C
-	{ 
-		T2 = 7 * ((uint64_t)dT * dT)/pow(2,37);
-		OFF2 = ((temp_calc - 2000) * (temp_calc - 2000)) / 16;
-		SENS2 = 0;
+		else
+			// If temp_calc is above 20.0C
+		{
+			T2 = 7 * ((uint64_t)dT * dT) / pow(2, 37);
+			OFF2 = ((temp_calc - 2000) * (temp_calc - 2000)) / 16;
+			SENS2 = 0;
+		}
+
+		// Now bring it all together to apply offsets 
+
+		OFF = ((int64_t)coefficient[2] << 16) + (((coefficient[4] * (int64_t)dT)) >> 7);
+		SENS = ((int64_t)coefficient[1] << 15) + (((coefficient[3] * (int64_t)dT)) >> 8);
+
+		temp_calc = temp_calc - T2;
+		OFF = OFF - OFF2;
+		SENS = SENS - SENS2;
+
+		// Now lets calculate the pressure
+
+
+		pressure_calc = (((SENS * pressure_raw) / 2097152) - OFF) / 32768;
+
+		_temperature_actual = temp_calc;
+		_pressure_actual = pressure_calc; // 10;// pressure_calc;
 	}
-	
-	// Now bring it all together to apply offsets 
-	
-	OFF = ((int64_t)coefficient[2] << 16) + (((coefficient[4] * (int64_t)dT)) >> 7);
-	SENS = ((int64_t)coefficient[1] << 15) + (((coefficient[3] * (int64_t)dT)) >> 8);
-	
-	temp_calc = temp_calc - T2;
-	OFF = OFF - OFF2;
-	SENS = SENS - SENS2;
-
-	// Now lets calculate the pressure
-	
-
-	pressure_calc = (((SENS * pressure_raw) / 2097152 ) - OFF) / 32768;
-	
-	_temperature_actual = temp_calc ;
-	_pressure_actual = pressure_calc ; // 10;// pressure_calc;
-	
+	else
+	{
+		_temperature_actual = -1;
+		_pressure_actual = -1;
+	}
 
 }
 
-int64_t MS5803::getADCconversion(measurement _measurement, precision _precision)
+int64_t MS5803::getADCconversion(measurement _measurement, precision _precision, bool& iselapsed)
 // Retrieve ADC measurement from the device.  
 // Select measurement type and precision
 {	
@@ -172,10 +188,10 @@ int64_t MS5803::getADCconversion(measurement _measurement, precision _precision)
 	uint8_t highByte = 0, midByte = 0, lowByte = 0;
 	
 	sendCommand(CMD_ADC_CONV + _measurement + _precision);
+	timer.start();
 	// Wait for conversion to complete
-	 //general delay
-	if (timer.elapsed() > 11) {
-
+	if (timer.elapsed() < 12)
+	{
 		switch (_precision)
 		{
 		case ADC_256:  break;
@@ -197,6 +213,7 @@ int64_t MS5803::getADCconversion(measurement _measurement, precision _precision)
 
 		result = ((uint32_t)highByte << 16) + ((uint32_t)midByte << 8) + lowByte;
 		return result;
+		iselapsed = true;
 	}
 	return -1;
 }
@@ -207,11 +224,5 @@ void MS5803::sendCommand(uint8_t command)
 	Wire.write(command);
 	Wire.endTransmission();
 	
-}
-
-void MS5803::sensorWait(uint8_t time)
-// Delay function.  This can be modified to work outside of Arduino based MCU's
-{
-	delay(time);
 }
 

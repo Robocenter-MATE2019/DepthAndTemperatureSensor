@@ -99,9 +99,7 @@ class MS5803
 		Timer timer;
 
 		void sendCommand(uint8_t command);	// General I2C send command function
-		int64_t getADCconversion(measurement _measurement, precision _precision);	// Retrieve ADC result
-
-		void sensorWait(uint8_t time); // General delay function see: delay()
+		int64_t getADCconversion(measurement _measurement, precision _precision, bool& iselapsed);	// Retrieve ADC result
 };
 
 #endif
