@@ -189,12 +189,12 @@ int64_t MS5803::getADCconversion(measurement _measurement, precision _precision,
 	uint8_t highByte = 0, midByte = 0, lowByte = 0;
 	
 	
-	if (!timer_for_temperature.is_started())
+	if (!timer_for_temperature.is_started() && _measurement == TEMPERATURE)
 	{
 		sendCommand(CMD_ADC_CONV + _measurement + _precision);
 		timer_for_temperature.start();
 	}
-	if (!timer_for_depth.is_started())
+	if (!timer_for_depth.is_started() && _measurement == PRESSURE)
 	{
 		timer_for_depth.start();
 		sendCommand(CMD_ADC_CONV + _measurement + _precision);
