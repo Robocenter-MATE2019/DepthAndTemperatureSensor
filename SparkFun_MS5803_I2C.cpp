@@ -36,6 +36,8 @@ MS5803::MS5803(ms5803_addr address)
 {
 	Wire.begin(); // Arduino Wire library initializer
 	_address = address; //set interface used for communication
+	timer_for_depth.start();
+	timer_for_temperature.start();
 }
 
 void MS5803::reset(void)
@@ -49,7 +51,6 @@ uint8_t MS5803::begin(void)
 // Initialize library for subsequent pressure measurements
 {  
 	uint8_t i;
-	timer.start();
 	for(i = 0; i <= 7; i++)
 	  {
 		sendCommand(CMD_PROM + (i * 2));
@@ -187,10 +188,28 @@ int64_t MS5803::getADCconversion(measurement _measurement, precision _precision,
 	uint32_t result;
 	uint8_t highByte = 0, midByte = 0, lowByte = 0;
 	
-	sendCommand(CMD_ADC_CONV + _measurement + _precision);
-	timer.start();
+	
+	if (!timer_for_temperature.is_started())
+	{
+		sendCommand(CMD_ADC_CONV + _measurement + _precision);
+		timer_for_temperature.start();
+	}
+	if (!timer_for_depth.is_started())
+	{
+		timer_for_depth.start();
+		sendCommand(CMD_ADC_CONV + _measurement + _precision);
+	}
+	bool flag = false;
+	if (_measurement == TEMPERATURE)
+	{
+		flag = timer_for_temperature.elapsed() > 12 ? true : false;
+	}
+	if (_measurement == PRESSURE)
+	{
+		flag = timer_for_depth.elapsed() > 12 ? true : false;
+	}
 	// Wait for conversion to complete
-	if (timer.elapsed() < 12)
+	if (flag)
 	{
 		switch (_precision)
 		{
@@ -214,8 +233,21 @@ int64_t MS5803::getADCconversion(measurement _measurement, precision _precision,
 		result = ((uint32_t)highByte << 16) + ((uint32_t)midByte << 8) + lowByte;
 		return result;
 		iselapsed = true;
+		if (_measurement == TEMPERATURE)
+		{
+			timer_for_temperature.start();
+		}
+		if (_measurement == PRESSURE)
+		{
+			timer_for_depth.start();
+		}
+		sendCommand(CMD_ADC_CONV + _measurement + _precision);
 	}
-	return -1;
+	else
+	{
+		iselapsed = false;
+		return -1;
+	}
 }
 
 void MS5803::sendCommand(uint8_t command)

@@ -96,7 +96,8 @@ class MS5803
 		
 		void getMeasurements(precision _precision);
 
-		Timer timer;
+		Timer timer_for_depth;
+		Timer timer_for_temperature;
 
 		void sendCommand(uint8_t command);	// General I2C send command function
 		int64_t getADCconversion(measurement _measurement, precision _precision, bool& iselapsed);	// Retrieve ADC result
